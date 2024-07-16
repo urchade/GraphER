@@ -3,6 +3,7 @@ from typing import List, Tuple, Dict
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import DataLoader
 
 
 # Abstract base class for handling data processing
@@ -34,7 +35,7 @@ class GrapherData(object):
         # Initialize a list to store span indices
         span_indices = []
         for i in range(token_length):
-            span_indices.extend([(i, i + j) for j in range(self.max_width)])
+            span_indices.extend([(i, i + j) for j in range(self.config.max_width)])
 
         # Get the dictionary of labels
         label_dict = self.get_dict(ner, classes_to_id) if ner else defaultdict(int)
@@ -130,3 +131,7 @@ class GrapherData(object):
             'rel_to_id': rel_to_id,
             'id_to_rel': id_to_rel
         }
+
+    def create_dataloader(self, data, entity_types=None, relation_types=None, **kwargs) -> DataLoader:
+        return DataLoader(data, collate_fn=lambda x: self.collate_fn(x, entity_types, relation_types), **kwargs)
+
