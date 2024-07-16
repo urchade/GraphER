@@ -12,6 +12,7 @@ class GrapherData(object):
 
     @staticmethod
     def get_dict(spans: List[Tuple[int, int, str]], classes_to_id: Dict[str, int]) -> Dict[Tuple[int, int], int]:
+        """Get a dictionary of spans."""
         dict_tag = defaultdict(int)
         for span in spans:
             dict_tag[(span[0], span[1])] = classes_to_id[span[-1]]
@@ -19,6 +20,7 @@ class GrapherData(object):
 
     def preprocess_spans(self, tokens: List[str], ner: List[Tuple[int, int, str]], rel: List[Tuple[int, int, str]],
                          classes_to_id: Dict[str, int]) -> Dict:
+        """Preprocess spans for a given text."""
         # Set the maximum length for tokens
         max_token_length = self.config.max_len
 
@@ -86,6 +88,7 @@ class GrapherData(object):
 
     def collate_fn(self, batch_list: List[Dict], entity_types: List[str] = None,
                    relation_types: List[str] = None) -> Dict:
+        """Collate a batch of data."""
 
         if entity_types is None or relation_types is None:
             ent_to_id, id_to_ent, rel_to_id, id_to_rel = self.batch_generate_class_mappings(batch_list)
