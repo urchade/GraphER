@@ -17,6 +17,8 @@ class GrapherData(object):
         """Get a dictionary of spans."""
         dict_tag = defaultdict(int)
         for span in spans:
+            if span[-1] not in classes_to_id:
+                continue
             dict_tag[(span[0], span[1])] = classes_to_id[span[-1]]
         return dict_tag
 
