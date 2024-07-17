@@ -93,8 +93,8 @@ class GrapherData(object):
                 random.shuffle(negative_relations)
 
                 # add negative entities and relations
-                ent_types.extend(negative_entities[:int(len(negative_entities) * neg_ratio)])
-                rel_types.extend(negative_relations[:int(len(negative_relations) * neg_ratio)])
+                ent_types.extend(negative_entities[:int(len(ent_types) * neg_ratio)])
+                rel_types.extend(negative_relations[:int(len(rel_types) * neg_ratio)])
 
             if self.config.shuffle_types:
                 random.shuffle(ent_types)
