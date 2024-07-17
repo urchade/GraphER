@@ -257,10 +257,10 @@ class GraphER(GrapherBase):
 
         # Apply transformer layer and keep_mlp
         out_trans = self.trans_layer(concat_span_pair, mask_span_pair)
-        keep_score = self.keep_mlp(out_trans)  # Shape: (B, max_top_k + max_top_k, 1)
+        keep_score = self.keep_mlp(out_trans).squeeze(-1)  # Shape: (B, max_top_k + max_top_k, 1)
 
         # Apply sigmoid function and squeeze the last dimension
-        keep_score = torch.sigmoid(keep_score).squeeze(-1)  # Shape: (B, max_top_k + max_top_k)
+        # keep_score = torch.sigmoid(keep_score).squeeze(-1)  # Shape: (B, max_top_k + max_top_k)
 
         # Split keep_score into keep_ent and keep_rel
         keep_ent, keep_rel = keep_score.split([max_top_k, max_top_k], dim=1)
@@ -289,7 +289,7 @@ class GraphER(GrapherBase):
 
         # Concatenate labels for binary classification and compute binary classification loss
         ent_rel_label = (torch.cat((candidate_span_label, candidate_pair_label), dim=1) > 0).float()
-        filter_loss = F.binary_cross_entropy(keep_score, ent_rel_label, reduction='none')
+        filter_loss = F.binary_cross_entropy_with_logits(keep_score, ent_rel_label, reduction='none')
 
         # Compute structure loss and total loss
         structure_loss = (filter_loss * mask_span_pair.float()).sum()

@@ -32,9 +32,9 @@ class FilteringLayer(nn.Module):
         filter_score = score[..., 1] - score[..., 0]  # Shape: [B, num_spans]
 
         # Mask out filter scores for ignored labels
-        filter_score = filter_score.masked_fill(label == -1, -1e9)
+        filter_score = filter_score.masked_fill(label == -1, float('-inf'))
 
         if self.training:
-            filter_score = filter_score.masked_fill(label_m > 0, 1e5)
+            filter_score = filter_score.masked_fill(label_m > 0, float('inf'))
 
         return filter_score, filter_loss

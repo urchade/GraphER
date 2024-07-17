@@ -37,6 +37,7 @@ class GrapherBase(nn.Module, PyTorchModelHubMixin):
 
     def adjust_logits(self, logits, keep):
         """Adjust logits based on the keep tensor."""
+        keep = torch.sigmoid(keep)
         keep = (keep > 0.5).unsqueeze(-1).float()
         adjusted_logits = logits + (1 - keep) * -1e9
         return adjusted_logits
