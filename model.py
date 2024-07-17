@@ -11,6 +11,7 @@ from modules.scorer import ScorerLayer
 from modules.span_rep import SpanRepLayer
 from modules.token_rep import TokenRepLayer
 from modules.utils import get_ground_truth_relations, get_candidates
+from modules.loss_functions import compute_matching_loss
 
 
 class GraphER(GrapherBase):
@@ -165,125 +166,124 @@ class GraphER(GrapherBase):
 
         # compute span representation
         if prediction_mode:
+            # Get the device of the model parameters
             device = next(self.parameters()).device
-            # span_rep, num_ent, num_rel, entity_type_rep, relation_type_rep, None, (word_rep, mask)
+
+            # Compute scores for evaluation
             span_rep, num_ent, num_rel, entity_type_rep, rel_type_rep, (word_rep, word_mask) = self.compute_score_eval(
-                x,
-                device)
-            # set relation_type_mask to tensor of ones
-            relation_type_mask = torch.ones(rel_type_rep.shape[0], num_rel).to(device)
+                x, device)
 
-            # set entity_type_mask to tensor of ones
-            entity_type_mask = torch.ones(entity_type_rep.shape[0], num_ent).to(device)
+            # Create masks for relation and entity types, setting all values to 1
+            relation_type_mask = torch.ones(size=(rel_type_rep.shape[0], num_rel), device=device)
+            entity_type_mask = torch.ones(size=(entity_type_rep.shape[0], num_ent), device=device)
         else:
+            # Compute scores for training
             span_rep, num_ent, num_rel, entity_type_rep, entity_type_mask, rel_type_rep, relation_type_mask, (
-                word_rep, mask) = self.compute_score_train(x)
+            word_rep, mask) = self.compute_score_train(x)
 
+        # Reshape span_rep from (B, L, K, D) to (B, L * K, D)
         B, L, K, D = span_rep.shape
         span_rep = span_rep.view(B, L * K, D)
 
-        # filtering scores for spans
+        # Compute filtering scores for spans
         filter_score_span, filter_loss_span = self._span_filtering(span_rep, x['span_label'])
 
-        # number of candidates
-        max_top_k = L + self.config.add_top_k
+        # Determine the maximum number of candidates
+        # If L is greater than the configured maximum, use the configured maximum plus an additional top K
+        # Otherwise, use L plus an additional top K
+        max_top_k = min(L, self.config.max_top_k) + self.config.add_top_k
 
-        if L > self.config.max_top_k:
-            max_top_k = self.config.max_top_k + self.config.add_top_k
+        # Sort the filter scores for spans in descending order
+        sorted_idx = torch.sort(filter_score_span, dim=-1, descending=True)[1]
 
-        # filtering scores for spans
-        _, sorted_idx = torch.sort(filter_score_span, dim=-1, descending=True)
+        # Define the elements to get candidates for
+        elements = [span_rep, span_label, x['span_mask'], x['span_idx']]
 
-        # Get candidate spans and labels
+        # Use a list comprehension to get the candidates for each element
         candidate_span_rep, candidate_span_label, candidate_span_mask, candidate_spans_idx = [
-            get_candidates(sorted_idx, el, topk=max_top_k)[0] for el in
-            [span_rep, span_label, x['span_mask'], x['span_idx']]]
+            get_candidates(sorted_idx, element, topk=max_top_k)[0] for element in elements
+        ]
 
-        # configure masks for entity #############################################
-        ##########################################################################
+        # Calculate the lengths for the top K entities
         top_k_lengths = x["seq_length"].clone() + self.config.add_top_k
-        arange_topk = torch.arange(max_top_k, device=span_rep.device)
-        masked_fill_cond = arange_topk.unsqueeze(0) >= top_k_lengths.unsqueeze(-1)
-        candidate_span_mask.masked_fill_(masked_fill_cond, 0)
-        candidate_span_label.masked_fill_(masked_fill_cond, -1)
-        ##########################################################################
-        ##########################################################################
 
-        # get ground truth relations
+        # Create a condition mask where the range of top K is greater than or equal to the top K lengths
+        condition_mask = torch.arange(max_top_k, device=span_rep.device).unsqueeze(0) >= top_k_lengths.unsqueeze(-1)
+
+        # Apply the condition mask to the candidate span mask and label, setting the masked values to 0 and -1 respectively
+        candidate_span_mask.masked_fill_(condition_mask, 0)
+        candidate_span_label.masked_fill_(condition_mask, -1)
+
+        # Get ground truth relations and represent them
         relation_classes = get_ground_truth_relations(x, candidate_spans_idx, candidate_span_label)
+        rel_rep = self.relation_rep(candidate_span_rep).view(B, max_top_k * max_top_k, -1)  # Reshape in the same line
 
-        # representation of relations
-        rel_rep = self.relation_rep(candidate_span_rep)  # [B, topk, topk, D]
+        # Compute filtering scores for relations and sort them in descending order
+        filter_score_rel, filter_loss_rel = self._rel_filtering(rel_rep, relation_classes)
+        sorted_idx_pair = torch.sort(filter_score_rel, dim=-1, descending=True)[1]
 
-        # filtering scores for relations
-        filter_score_rel, filter_loss_rel = self._rel_filtering(
-            rel_rep.view(B, max_top_k * max_top_k, -1), relation_classes)
-
-        # filtering scores for relation pairs
-        _, sorted_idx_pair = torch.sort(filter_score_rel, dim=-1, descending=True)
-
+        # Embed candidate span representations
         candidate_span_rep, cat_pair_rep = self.graph_embedder(candidate_span_rep)
 
-        # Get candidate pairs and labels
-        candidate_pair_rep, candidate_pair_label = [get_candidates(sorted_idx_pair, el, topk=max_top_k)[0] for el
-                                                    in
-                                                    [cat_pair_rep.view(B, max_top_k * max_top_k, -1),
-                                                     relation_classes.view(B, max_top_k * max_top_k)]]
+        # Define the elements to get candidates for
+        elements = [cat_pair_rep.view(B, max_top_k * max_top_k, -1), relation_classes.view(B, max_top_k * max_top_k)]
 
+        # Use a list comprehension to get the candidates for each element
+        candidate_pair_rep, candidate_pair_label = [get_candidates(sorted_idx_pair, element, topk=max_top_k)[0] for
+                                                    element in elements]
+
+        # Get the top K relation indices
         topK_rel_idx = sorted_idx_pair[:, :max_top_k]
 
-        #######################################################
-        candidate_pair_label.masked_fill_(masked_fill_cond, -1)
-        #######################################################
-
-        # refine relation representation ##############################################
+        # Mask the candidate pair labels using the condition mask and refine the relation representation
+        candidate_pair_label.masked_fill_(condition_mask, -1)
         candidate_pair_mask = candidate_pair_label > -1
-        ################################################################################
 
-        # concat span and relation representation
-        # outcont of shape (B, max_top_k + max_top_k, D) # ent1, ent2, ..., ent_n, rel1, rel2, ..., rel_n
-        out_cont = torch.cat((candidate_span_rep, candidate_pair_rep), dim=1)
+        # Concatenate span and relation representations
+        concat_span_pair = torch.cat((candidate_span_rep, candidate_pair_rep), dim=1)
+        mask_span_pair = torch.cat((candidate_span_mask, candidate_pair_mask), dim=1)
 
-        # mask for relation type representation
-        mask_cont = torch.cat((candidate_span_mask, candidate_pair_mask),
-                              dim=1)
+        # Apply transformer layer and keep_mlp
+        out_trans = self.trans_layer(concat_span_pair, mask_span_pair)
+        keep_score = self.keep_mlp(out_trans)  # Shape: (B, max_top_k + max_top_k, 2)
 
-        # transformer layer
-        out_trans = self.trans_layer(out_cont, mask_cont)
+        # Split keep_score for entities and relations and concatenate them
+        keep_score = torch.cat([
+            keep_score[:, :max_top_k, 0].unsqueeze(-1),  # Entities
+            keep_score[:, max_top_k:, 0].unsqueeze(-1)  # Relations
+        ], dim=1)  # Shape: (B, max_top_k + max_top_k, 1)
 
-        # keep_mlp
-        keep_score = self.keep_mlp(out_trans)  # (B, max_top_k + max_top_k, 2)
+        # Apply sigmoid function and squeeze the last dimension
+        keep_score = torch.sigmoid(keep_score).squeeze(-1)  # Shape: (B, max_top_k + max_top_k)
 
-        # keep_score[..., 0] is for ent, keep_score[..., 1] is for rel
-        keep_score_ent = keep_score[:, :max_top_k, 0].unsqueeze(-1)  # (B, max_top_k, 1)
-        keep_score_rel = keep_score[:, max_top_k:, 0].unsqueeze(-1)  # (B, max_top_k, 1)
-
-        keep_score = torch.cat((keep_score_ent, keep_score_rel), dim=1)  # (B, max_top_k + max_top_k, 1)
-
-        keep_score = torch.sigmoid(keep_score).squeeze(-1)  # (B, max_top_k + max_top_k)
-
+        # Split keep_score into keep_ent and keep_rel
         keep_ent, keep_rel = keep_score.split([max_top_k, max_top_k], dim=1)
 
-        # compute scores
-        scores_ent = self.scorer_ent(candidate_span_rep, entity_type_rep)  # [B, N, C]
-        scores_rel = self.scorer_rel(candidate_pair_rep, rel_type_rep)  # [B, N, C]
+        # Compute scores for entities and relations
+        scores_ent = self.scorer_ent(candidate_span_rep, entity_type_rep)  # Shape: [B, N, C]
+        scores_rel = self.scorer_rel(candidate_pair_rep, rel_type_rep)  # Shape: [B, N, C]
 
         if prediction_mode:
-            return {"entity_logits": scores_ent, "relation_logits": scores_rel,
-                    "candidate_spans_idx": candidate_spans_idx,
-                    "candidate_pair_label": candidate_pair_label,
-                    "max_top_k": max_top_k, "topK_rel_idx": topK_rel_idx, "keep_ent": keep_ent, "keep_rel": keep_rel}
+            return {
+                "entity_logits": scores_ent,
+                "relation_logits": scores_rel,
+                "candidate_spans_idx": candidate_spans_idx,
+                "candidate_pair_label": candidate_pair_label,
+                "max_top_k": max_top_k,
+                "topK_rel_idx": topK_rel_idx,
+                "keep_ent": keep_ent,
+                "keep_rel": keep_rel
+            }
+        # Compute losses for relation and entity classifiers
+        relation_loss = compute_matching_loss(scores_rel, candidate_pair_label, relation_type_mask, num_rel)
+        entity_loss = compute_matching_loss(scores_ent, candidate_span_label, entity_type_mask, num_ent)
 
-        # loss for relation classifier
-        relation_loss = self.compute_loss(scores_rel, candidate_pair_label, relation_type_mask, num_rel)
-        entity_loss = self.compute_loss(scores_ent, candidate_span_label, entity_type_mask, num_ent)
+        # Concatenate labels for binary classification and compute binary classification loss
+        ent_rel_label = (torch.cat((candidate_span_label, candidate_pair_label), dim=1) > 0).float()
+        filter_loss = F.binary_cross_entropy(keep_score, ent_rel_label, reduction='none')
 
-        # concat label for binary classification
-        ent_rel_label = torch.cat((candidate_span_label, candidate_pair_label), dim=1) > 0  # (B, max_top_k + max_top_k)
+        # Compute structure loss and total loss
+        structure_loss = (filter_loss * mask_span_pair.float()).sum()
+        total_loss = sum([filter_loss_span, filter_loss_rel, relation_loss, entity_loss, structure_loss])
 
-        # binary classification loss
-        filter_loss = F.binary_cross_entropy(keep_score, ent_rel_label.float(), reduction='none')
-
-        structure_loss = (filter_loss * mask_cont.float()).sum()
-
-        return filter_loss_span + filter_loss_rel + relation_loss + entity_loss + structure_loss
+        return total_loss

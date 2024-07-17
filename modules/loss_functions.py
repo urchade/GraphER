@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 
 
-def compute_loss(logits, labels, mask, num_classes):
+def compute_matching_loss(logits, labels, mask, num_classes):
     B, _, _ = logits.size()
 
     logits_label = logits.view(-1, num_classes)
