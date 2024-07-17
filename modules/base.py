@@ -14,6 +14,7 @@ from .data_processor import GrapherData
 from .evaluator import Evaluator
 from .token_splitter import WhitespaceTokenSplitter, MecabKoTokenSplitter, SpaCyTokenSplitter
 from .utils import er_decoder, get_relation_with_span
+from types import SimpleNamespace
 
 
 class GrapherBase(nn.Module, PyTorchModelHubMixin):
@@ -112,7 +113,7 @@ class GrapherBase(nn.Module, PyTorchModelHubMixin):
         if config is None:
             config = self.config
         if config is not None:
-            if isinstance(config, argparse.Namespace):
+            if isinstance(config, argparse.Namespace) or isinstance(config, SimpleNamespace):
                 config = vars(config)
             (save_directory / "config.json").write_text(json.dumps(config, indent=2))
 
