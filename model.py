@@ -265,8 +265,9 @@ class GraphER(GrapherBase):
         # Split keep_score into keep_ent and keep_rel
         keep_ent, keep_rel = keep_score.split([max_top_k, max_top_k], dim=1)
 
+        """not use output from transformer layer for now"""
         # Split out_trans
-        candidate_span_rep, candidate_pair_rep = out_trans.split([max_top_k, max_top_k], dim=1)
+        # candidate_span_rep, candidate_pair_rep = out_trans.split([max_top_k, max_top_k], dim=1)
 
         # Compute scores for entities and relations
         scores_ent = self.scorer_ent(candidate_span_rep, entity_type_rep)  # Shape: [B, N, C]

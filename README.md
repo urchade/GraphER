@@ -1,5 +1,10 @@
 # *GraphER*: A Structure-aware Text-to-Graph Model for Entity and Relation Extraction
 
+### TO DO:
+- [ ] Implement negative sampling (both for entities and relations)
+- [ ] Add evaluation computation
+- [ ] Ablation study
+
 For now, you can play with the beta version in colab: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/drive/1IinAMCtUotntrtoP9zNutriZJtJ4Hymd?usp=sharing)
 
 ```bibtex
