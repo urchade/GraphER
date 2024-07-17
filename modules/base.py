@@ -11,8 +11,9 @@ from huggingface_hub import PyTorchModelHubMixin, hf_hub_download
 from torch.utils.data import DataLoader
 
 from .data_processor import GrapherData
-from .utils import er_decoder, get_relation_with_span
 from .evaluator import Evaluator
+from .token_splitter import WhitespaceTokenSplitter, MecabKoTokenSplitter, SpaCyTokenSplitter
+from .utils import er_decoder, get_relation_with_span
 
 
 class GrapherBase(nn.Module, PyTorchModelHubMixin):
@@ -22,13 +23,13 @@ class GrapherBase(nn.Module, PyTorchModelHubMixin):
         self.config = config
         self.data_proc = GrapherData(config)
 
-        # if not hasattr(config, 'token_splitter'):
-        #     self.token_splitter = WhitespaceTokenSplitter()
-        # elif self.config.token_splitter == "spacy":
-        #     lang = getattr(config, 'token_splitter_lang', None)
-        #     self.token_splitter = SpaCyTokenSplitter(lang=lang)
-        # elif self.config.token_splitter == "mecab-ko":
-        #     self.token_splitter = MecabKoTokenSplitter()
+        if not hasattr(config, 'token_splitter'):
+            self.token_splitter = WhitespaceTokenSplitter()
+        elif self.config.token_splitter == "spacy":
+            lang = getattr(config, 'token_splitter_lang', None)
+            self.token_splitter = SpaCyTokenSplitter(lang=lang)
+        elif self.config.token_splitter == "mecab-ko":
+            self.token_splitter = MecabKoTokenSplitter()
 
     @abstractmethod
     def forward(self, x):
@@ -51,7 +52,7 @@ class GrapherBase(nn.Module, PyTorchModelHubMixin):
         # Get entities and relations
         entities, relations = er_decoder(x, out["entity_logits"], out["relation_logits"], out["topK_rel_idx"],
                                          out["max_top_k"], out["candidate_spans_idx"], threshold=threshold,
-                                         output_confidence=output_confidence)
+                                         output_confidence=output_confidence, token_splitter=self.token_splitter)
         return entities, relations
 
     def evaluate(self, test_data, threshold=0.5, batch_size=12, relation_types=None):
