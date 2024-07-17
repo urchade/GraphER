@@ -1,0 +1,42 @@
+# Model Configuration
+model_name: microsoft/deberta-v3-base  # Hugging Face model
+name: "grapher"
+max_width: 100
+hidden_size: 768
+dropout: 0.1
+fine_tune: true
+subtoken_pooling: first
+span_mode: markerV0
+num_heads: 4
+num_transformer_layers: 2
+ffn_mul: 4
+scorer: "dot"
+
+# Training Parameters
+num_steps: 30000
+train_batch_size: 1
+eval_every: 5000
+warmup_ratio: 0.1
+scheduler_type: "cosine"
+
+# Learning Rate and weight decay Configuration
+lr_encoder: 1e-5
+lr_others: 5e-5
+
+# Directory Paths
+root_dir: grapher_logs
+train_data: "data/rel_news_b.json"
+val_data_dir: "data/NER_datasets"
+
+# Pretrained Model Path
+# Use "none" if no pretrained model is being used
+prev_path: "none"
+
+# Advanced Training Settings
+size_sup: -1
+max_types: 25
+max_len: 384
+freeze_token_rep: false
+save_total_limit: 20
+max_top_k: 54
+add_top_k: 10
