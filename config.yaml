@@ -14,7 +14,7 @@ scorer: "dot"
 
 # Training Parameters
 num_steps: 30000
-train_batch_size: 1
+train_batch_size: 8
 eval_every: 5000
 warmup_ratio: 0.1
 scheduler_type: "cosine"

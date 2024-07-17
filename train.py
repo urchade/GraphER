@@ -88,6 +88,8 @@ class Trainer:
                 num_transformer_layers=config.num_transformer_layers,
                 ffn_mul=config.ffn_mul,
                 scorer=config.scorer,
+                max_top_k=config.max_top_k,
+                add_top_k=config.add_top_k
             )
 
         self.allow_distributed = allow_distributed
