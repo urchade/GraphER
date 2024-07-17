@@ -4,7 +4,7 @@ from typing import List, Tuple, Dict
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
-
+import random
 
 # Abstract base class for handling data processing
 class GrapherData(object):
@@ -76,6 +76,10 @@ class GrapherData(object):
         for b in batch_list:
             ent_types = list(set([el[-1] for el in b['entities']]))
             rel_types = list(set([el[-1] for el in b['relations']]))
+
+            if self.config.shuffle_types:
+                random.shuffle(ent_types)
+                random.shuffle(rel_types)
 
             ent_to_id, id_to_ent = self.create_mapping(ent_types)
             rel_to_id, id_to_rel = self.create_mapping(rel_types)

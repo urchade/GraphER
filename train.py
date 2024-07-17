@@ -70,7 +70,8 @@ class Trainer:
                 max_types=config.max_types,
                 max_len=config.max_len,
                 max_top_k=config.max_top_k,
-                add_top_k=config.add_top_k
+                add_top_k=config.add_top_k,
+                shuffle_types=config.shuffle_types
             )
         else:
             self.model_config = SimpleNamespace(
@@ -89,7 +90,8 @@ class Trainer:
                 ffn_mul=config.ffn_mul,
                 scorer=config.scorer,
                 max_top_k=config.max_top_k,
-                add_top_k=config.add_top_k
+                add_top_k=config.add_top_k,
+                shuffle_types=config.shuffle_types
             )
 
         self.allow_distributed = allow_distributed
@@ -113,7 +115,7 @@ class Trainer:
             # other than these are overwritten
             keep_params = ['model_name', 'name', 'max_width', 'hidden_size', 'dropout', 'subtoken_pooling', 'span_mode',
                            "fine_tune", "max_types", "max_len", "num_heads", "num_transformer_layers", "ffn_mul",
-                            "scorer", "max_top_k", "add_top_k"]
+                            "scorer"]
 
             for param in keep_params:
                 original_value = getattr(model.config, param)
@@ -214,22 +216,17 @@ class Trainer:
                 if isinstance(v, torch.Tensor):
                     x[k] = v.to(device)
 
-            try:
-                with torch.cuda.amp.autocast(dtype=torch.float16):
-                    loss = model(x)
+            with torch.cuda.amp.autocast(dtype=torch.float16):
+                loss = model(x)
 
-                if torch.isnan(loss).any():
-                    print("Warning: NaN loss detected")
-                    continue
-
-                scaler.scale(loss).backward()
-                scaler.step(optimizer)
-                scaler.update()
-                scheduler.step()
-            except Exception as e:
-                print(f"Error: {e}")
-                torch.cuda.empty_cache()
+            if torch.isnan(loss).any():
+                print("Warning: NaN loss detected")
                 continue
+
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+            scheduler.step()
 
             description = f"step: {step} | epoch: {step // len(train_loader)} | loss: {loss.item():.2f}"
             pbar.set_description(description)
