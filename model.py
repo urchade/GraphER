@@ -5,13 +5,13 @@ from torch import nn
 from modules.base import GrapherBase
 from modules.data_processor import TokenPromptProcessorTR
 from modules.filtering import FilteringLayer
-from modules.layers import TransLayer, GraphEmbedder, MLP, LstmSeq2SeqEncoder
+from modules.layers import MLP, LstmSeq2SeqEncoder, TransLayer, GraphEmbedder
+from modules.loss_functions import compute_matching_loss
 from modules.rel_rep import RelationRep
 from modules.scorer import ScorerLayer
 from modules.span_rep import SpanRepLayer
 from modules.token_rep import TokenRepLayer
 from modules.utils import get_ground_truth_relations, get_candidates
-from modules.loss_functions import compute_matching_loss
 
 
 class GraphER(GrapherBase):
@@ -28,7 +28,7 @@ class GraphER(GrapherBase):
         # usually a pretrained bidirectional transformer, returns first subtoken representation
         self.token_rep_layer = TokenRepLayer(model_name=config.model_name, fine_tune=config.fine_tune,
                                              subtoken_pooling=config.subtoken_pooling, hidden_size=config.hidden_size,
-                                             add_tokens=[self.rel_token, self.sep_token])
+                                             add_tokens=[self.ent_token, self.rel_token, self.sep_token])
 
         # token prompt processor
         self.token_prompt_processor = TokenPromptProcessorTR(self.ent_token, self.rel_token, self.sep_token)
@@ -65,16 +65,27 @@ class GraphER(GrapherBase):
         self.graph_embedder = GraphEmbedder(config.hidden_size)
 
         # transformer layer
-        self.trans_layer = TransLayer(config.hidden_size, num_heads=4, num_layers=2)
+        self.trans_layer = TransLayer(
+            config.hidden_size,
+            num_heads=config.num_heads,
+            num_layers=config.num_transformer_layers
+        )
 
         # keep_mlp
         self.keep_mlp = MLP([config.hidden_size, config.hidden_size * config.ffn_mul, 1], dropout=0.1)
 
-        # scoring layer
-        self.scorer_ent = ScorerLayer(scoring_type=config.scorer, hidden_size=config.hidden_size,
-                                      dropout=config.dropout)
-        self.scorer_rel = ScorerLayer(scoring_type=config.scorer, hidden_size=config.hidden_size,
-                                      dropout=config.dropout)
+        # scoring layers
+        self.scorer_ent = ScorerLayer(
+            scoring_type=config.scorer,
+            hidden_size=config.hidden_size,
+            dropout=config.dropout
+        )
+
+        self.scorer_rel = ScorerLayer(
+            scoring_type=config.scorer,
+            hidden_size=config.hidden_size,
+            dropout=config.dropout
+        )
 
     def get_optimizer(self, lr_encoder, lr_others, freeze_token_rep=False):
         """
@@ -210,7 +221,8 @@ class GraphER(GrapherBase):
         # Create a condition mask where the range of top K is greater than or equal to the top K lengths
         condition_mask = torch.arange(max_top_k, device=span_rep.device).unsqueeze(0) >= top_k_lengths.unsqueeze(-1)
 
-        # Apply the condition mask to the candidate span mask and label, setting the masked values to 0 and -1 respectively
+        # Apply the condition mask to the candidate span mask and label, setting the masked values to 0 and -1
+        # respectively
         candidate_span_mask.masked_fill_(condition_mask, 0)
         candidate_span_label.masked_fill_(condition_mask, -1)
 
@@ -245,19 +257,16 @@ class GraphER(GrapherBase):
 
         # Apply transformer layer and keep_mlp
         out_trans = self.trans_layer(concat_span_pair, mask_span_pair)
-        keep_score = self.keep_mlp(out_trans)  # Shape: (B, max_top_k + max_top_k, 2)
-
-        # Split keep_score for entities and relations and concatenate them
-        keep_score = torch.cat([
-            keep_score[:, :max_top_k, 0].unsqueeze(-1),  # Entities
-            keep_score[:, max_top_k:, 0].unsqueeze(-1)  # Relations
-        ], dim=1)  # Shape: (B, max_top_k + max_top_k, 1)
+        keep_score = self.keep_mlp(out_trans)  # Shape: (B, max_top_k + max_top_k, 1)
 
         # Apply sigmoid function and squeeze the last dimension
         keep_score = torch.sigmoid(keep_score).squeeze(-1)  # Shape: (B, max_top_k + max_top_k)
 
         # Split keep_score into keep_ent and keep_rel
         keep_ent, keep_rel = keep_score.split([max_top_k, max_top_k], dim=1)
+
+        # Split out_trans
+        candidate_span_rep, candidate_pair_rep = out_trans.split([max_top_k, max_top_k], dim=1)
 
         # Compute scores for entities and relations
         scores_ent = self.scorer_ent(candidate_span_rep, entity_type_rep)  # Shape: [B, N, C]
@@ -267,12 +276,12 @@ class GraphER(GrapherBase):
             return {
                 "entity_logits": scores_ent,
                 "relation_logits": scores_rel,
+                "keep_ent": keep_ent,
+                "keep_rel": keep_rel,
                 "candidate_spans_idx": candidate_spans_idx,
                 "candidate_pair_label": candidate_pair_label,
                 "max_top_k": max_top_k,
-                "topK_rel_idx": topK_rel_idx,
-                "keep_ent": keep_ent,
-                "keep_rel": keep_rel
+                "topK_rel_idx": topK_rel_idx
             }
         # Compute losses for relation and entity classifiers
         relation_loss = compute_matching_loss(scores_rel, candidate_pair_label, relation_type_mask, num_rel)
