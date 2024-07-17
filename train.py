@@ -71,7 +71,11 @@ class Trainer:
                 max_len=config.max_len,
                 max_top_k=config.max_top_k,
                 add_top_k=config.add_top_k,
-                shuffle_types=config.shuffle_types
+                shuffle_types=config.shuffle_types,
+                random_drop=config.random_drop,
+                max_neg_type_ratio=config.max_neg_type_ratio,
+                max_ent_types=config.fine_tune,
+                max_rel_types=config.max_rel_types,
             )
         else:
             self.model_config = SimpleNamespace(
@@ -91,7 +95,11 @@ class Trainer:
                 scorer=config.scorer,
                 max_top_k=config.max_top_k,
                 add_top_k=config.add_top_k,
-                shuffle_types=config.shuffle_types
+                shuffle_types=config.shuffle_types,
+                random_drop=config.random_drop,
+                max_neg_type_ratio=config.max_neg_type_ratio,
+                max_ent_types=config.fine_tune,
+                max_rel_types=config.max_rel_types,
             )
 
         self.allow_distributed = allow_distributed

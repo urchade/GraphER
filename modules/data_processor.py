@@ -6,6 +6,7 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 import random
 
+
 # Abstract base class for handling data processing
 class GrapherData(object):
     def __init__(self, config):
@@ -73,13 +74,42 @@ class GrapherData(object):
         """Generate class mappings for a batch of data."""
         all_ent_to_id, all_id_to_ent, all_rel_to_id, all_id_to_rel = [], [], [], []
 
+        negative_entities = []
+        negative_relations = []
+
         for b in batch_list:
             ent_types = list(set([el[-1] for el in b['entities']]))
             rel_types = list(set([el[-1] for el in b['relations']]))
 
+            # added hpm: random_drop, max_neg_type_ratio
+            # max_ent_types, max_rel_types
+
+            # add negative entities and relations
+            if self.config.max_neg_type_ratio > 0:
+                neg_ratio = random.uniform(0.25, self.config.max_neg_type_ratio)
+
+                # shuffle negative entities and relations
+                random.shuffle(negative_entities)
+                random.shuffle(negative_relations)
+
+                # add negative entities and relations
+                ent_types.extend(negative_entities[:int(len(negative_entities) * neg_ratio)])
+                rel_types.extend(negative_relations[:int(len(negative_relations) * neg_ratio)])
+
             if self.config.shuffle_types:
                 random.shuffle(ent_types)
                 random.shuffle(rel_types)
+
+            # random length of entities and relations
+            if self.config.random_drop:
+                sample_n_ent = random.randint(1, len(ent_types))
+                sample_n_rel = random.randint(1, len(rel_types))
+
+                ent_types = ent_types[:sample_n_ent]
+                rel_types = rel_types[:sample_n_rel]
+
+            ent_types = ent_types[:self.config.max_ent_types]
+            rel_types = rel_types[:self.config.max_rel_types]
 
             ent_to_id, id_to_ent = self.create_mapping(ent_types)
             rel_to_id, id_to_rel = self.create_mapping(rel_types)
@@ -88,6 +118,9 @@ class GrapherData(object):
             all_id_to_ent.append(id_to_ent)
             all_rel_to_id.append(rel_to_id)
             all_id_to_rel.append(id_to_rel)
+
+            negative_entities.extend(ent_types)
+            negative_relations.extend(rel_types)
 
         return all_ent_to_id, all_id_to_ent, all_rel_to_id, all_id_to_rel
 

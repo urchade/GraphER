@@ -41,3 +41,8 @@ save_total_limit: 20
 max_top_k: 54
 add_top_k: 10
 shuffle_types: true
+
+random_drop: true
+max_neg_type_ratio: 2
+max_ent_types: 20
+max_rel_types: 20
