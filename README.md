@@ -1,5 +1,7 @@
 # *GraphER*: A Structure-aware Text-to-Graph Model for Entity and Relation Extraction
 
+![Alt text](grapher_fig.png)
+
 ### TO DO:
 - [ ] Implement negative sampling (both for entities and relations)
 - [ ] Add evaluation computation
